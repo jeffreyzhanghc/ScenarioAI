@@ -1,0 +1,17 @@
+# Python-related files
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.pyo
+*.so
+
+# Environment variables
+.env
+
+# Virtual environment folder
+venv/
+.venv/
+
+# MacOS-specific files
+.DS_Store
