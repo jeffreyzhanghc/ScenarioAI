@@ -1,14 +1,17 @@
-import psycopg2, asyncpg, asyncio
+import psycopg2, asyncpg, asyncio, os
+from dotenv import load_dotenv
+load_dotenv()
 
 
-
+host = os.getenv('host')
+pw = os.getenv('password')
 async def get_comments(word):
     pool = await asyncpg.create_pool(
-    host="scenario.c94y6o2med3l.us-west-2.rds.amazonaws.com",
+    host=host,
     port="5432",
     database="scenario",
     user="contractor",
-    password="123456789"
+    password= pw
 )
     try:
         async with pool.acquire() as connection:
