@@ -5,7 +5,7 @@ load_dotenv()
 
 host = os.getenv('host')
 pw = os.getenv('password')
-async def get_comments(word):
+async def get_comments(words: list):
     pool = await asyncpg.create_pool(
     host=host,
     port="5432",
@@ -13,12 +13,13 @@ async def get_comments(word):
     user="contractor",
     password= pw
 )
+    sql_value = "(" + ", ".join(map(repr, words)) + ")"
     try:
         async with pool.acquire() as connection:
             # First Query: Get aweme_id values
 
-                query = f"SELECT t.aweme_id FROM tiktok_posts t WHERE hashtag_keyword = '{word}';"
-                print(query)
+                query = f"SELECT t.aweme_id FROM tiktok_posts t WHERE hashtag_keyword in {sql_value};"
+                #print(query)
                 results = await connection.fetch(query)
                 post_ids = [record['aweme_id'] for record in results]
 
@@ -28,7 +29,7 @@ async def get_comments(word):
 
                 # Convert the list of IDs into a string for the SQL IN clause
                 formatted_ids = ','.join(f"'{id}'" for id in post_ids)
-                print(formatted_ids)
+                #print(formatted_ids)
 
                 # Second Query: Fetch data based on the aweme_id list
                 query = f'''
@@ -40,7 +41,7 @@ async def get_comments(word):
 
                 # Convert query result into a list of dictionaries
                 comments = [dict(row) for row in rows]
-                print(comments)
+                #print(comments)
 
                 return comments
     except Exception as e:

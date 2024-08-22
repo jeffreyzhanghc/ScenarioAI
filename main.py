@@ -1,5 +1,6 @@
 from db import get_comments
 from chat import get_response_from_llm
+from utils import combine_chunk_embeddings
 import openai, json, asyncio
 import os
 import os.path as osp
@@ -37,7 +38,7 @@ In <JSON>, provide the analyzed scenario for user painpoints:
 - "reason": Provide detailed analytical reason for the selection of this scenario.
 - "refer_comment": provide list of comments selected from given comments that have the most contribution on determining selling scenarios.
 - "hashtags": A list of hashtags according to the specific scenario identified, used to attached under tiktok video post to enhace search rate. The length of hashtags list should be less than 10, and each of them will be generated after deliberate consideration.
-
+- "guidance": Provide a content guidance on potential schema on creating a new tiktok video posts, highlight your suggested main theme, key hook, and selling scenario. 
 This JSON will be automatically parsed, so ensure the format is precise. Generate 3-5 Scenarios.
 """
 
@@ -75,6 +76,16 @@ def generate_scenarios(
 
 client_model = "gpt-4o-2024-05-13"
 client = openai.OpenAI()
-comments = asyncio.run(get_comments("Massage Devices"))
+comments = asyncio.run(get_comments(['Massage Devices', '#MassageTherapy', '#Relaxation']))
 comment_texts = [item['text'] for item in comments]
+
+
+# Example usage
+long_text = ";".join(comment_texts)
+
+combined_embedding, attention_weights = combine_chunk_embeddings(long_text)
+print(combined_embedding)
+
+print("Combined Embedding Shape:", combined_embedding.shape)
+print("Attention Weights:", attention_weights)
 generate_scenarios("./",comment_texts,"MassageDevice",client,client_model)
