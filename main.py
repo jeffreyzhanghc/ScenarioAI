@@ -1,6 +1,6 @@
 from db import get_comments
 from chat import get_response_from_llm
-from utils import combine_chunk_embeddings
+from utils import preprocess_comments
 import openai, json, asyncio
 import os
 import os.path as osp
@@ -34,13 +34,16 @@ Scenario JSON:
 In <THOUGHT>, first briefly discuss your intuitions and motivations for the idea. Detail your analysis on review, summary, and potential painpoints identified that lead to further analysis.
 
 In <JSON>, provide the analyzed scenario for user painpoints:
-- "scenario": A shortened description of a product selling scenario.
-- "reason": Provide detailed analytical reason for the selection of this scenario.
-- "refer_comment": provide list of comments selected from given comments that have the most contribution on determining selling scenarios.
+- "scenario": A shortened description of a product selling scenario. 
+- "reason": Provide detailed analytical reason for the selection of this scenario. You need to identify the target user, scenario, motivation
+- "refer_comment": provide list of comments selected from given comments that have the most contribution on determining selling scenarios. You should provide at least 10 reference comment for each scenario, and do not consider subjectless comment like 'This is great!'
+- "num_comments_referred": provide an integer that explain total numbers of comments among all comments you referred to generate this scenario.
 - "hashtags": A list of hashtags according to the specific scenario identified, used to attached under tiktok video post to enhace search rate. The length of hashtags list should be less than 10, and each of them will be generated after deliberate consideration.
 - "guidance": Provide a content guidance on potential schema on creating a new tiktok video posts, highlight your suggested main theme, key hook, and selling scenario. 
-This JSON will be automatically parsed, so ensure the format is precise. Generate 3-5 Scenarios.
+- "confidence_score": provide confidence score on scale of 1-10 representing your confidence regarding whether the scenario generated will be a good pinpoints for this product.
+This JSON will be automatically parsed, so ensure the format is precise. Generate 10 Scenarios. Scenarios generated must be diverse and with DEEP INSIGHTS. 
 """
+
 
 def generate_scenarios(
     save_dir,
@@ -74,18 +77,25 @@ def generate_scenarios(
     #with open(osp.join(save_dir, "scenario.json"), "w") as f:
         #json.dump(json_output, f, indent=4)
 
-client_model = "gpt-4o-2024-05-13"
-client = openai.OpenAI()
-comments = asyncio.run(get_comments(['Massage Devices', '#MassageTherapy', '#Relaxation']))
-comment_texts = [item['text'] for item in comments]
 
+if __name__ == "__main__":
+    
+    client_model = "gpt-4o-2024-05-13"
+    client = openai.OpenAI()
+    comments = asyncio.run(get_comments(['Massage Devices', '#MassageTherapy', '#Relaxation']))
+    comment_texts = [item['text'] for item in comments[:10000]]
 
-# Example usage
-long_text = ";".join(comment_texts)
+    print("Preprocessing, translating, extracting emojis, and filtering comments...")
+    preprocessed_comments = preprocess_comments(comment_texts,batch_size=200,max_workers=10)
 
-combined_embedding, attention_weights = combine_chunk_embeddings(long_text)
-print(combined_embedding)
+    print(f"Filtered {len(comment_texts) - len(preprocessed_comments)} low-quality comments.")
+    print(f"Proceeding with {len(preprocessed_comments)} meaningful comments.")
 
-print("Combined Embedding Shape:", combined_embedding.shape)
-print("Attention Weights:", attention_weights)
-generate_scenarios("./",comment_texts,"MassageDevice",client,client_model)
+    processed_comment_texts = [item['original'] for item in preprocessed_comments]
+    # Example usage
+    long_text = ";".join(processed_comment_texts)
+
+    #combined_embedding, attention_weights = combine_chunk_embeddings(long_text)
+    #print(combined_embedding)
+
+    generate_scenarios("./",comment_texts,"MassageDevice",client,client_model)
