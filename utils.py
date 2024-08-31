@@ -4,7 +4,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 import numpy as np
 import json
 import asyncio
-from collections import defaultdict
+from collections import defaultdict, Counter
 from typing import List, Dict, Tuple
 from langdetect import detect, LangDetectException
 from deep_translator import GoogleTranslator
@@ -58,15 +58,16 @@ def is_meaningful_comment(comment: str) -> bool:
     
     return is_meaningful
 
-def process_text_batch(texts: List[Tuple[str, str, str, str]]) -> List[Dict[str, str]]:
+def process_text_batch(texts: List[Tuple[str, str, str, str, int]]) -> List[Dict[str, str]]:
     processed_texts = []
-    for id, parent_id, text_type, text in texts:
+    for id, parent_id, text_type, text, likes in texts:  # Include 'likes' in the unpacking
         if is_meaningful_comment(text):
             processed_texts.append({
                 'id': id,
                 'parent_id': parent_id,
                 'type': text_type,
-                'text': text
+                'text': text,
+                'likes': likes  # Include likes in the resulting dictionary
             })
     return processed_texts
 
@@ -75,11 +76,11 @@ def preprocess_tiktok_data(data: Dict[str, Dict], batch_size: int = 1000, max_wo
     
     # Flatten the data structure for parallel processing
     for post_id, post_data in data.items():
-        all_texts.append((post_id, None, 'post', post_data['description']))
+        all_texts.append((post_id, None, 'post', post_data['description'], post_data['post_likes']))
         for comment_id, comment_data in post_data['comments'].items():
-            all_texts.append((comment_id, post_id, 'comment', comment_data['text']))
+            all_texts.append((comment_id, post_id, 'comment', comment_data['text'], comment_data['comment_likes']))
             for reply in comment_data['replies']:
-                all_texts.append((f"reply_{len(all_texts)}", comment_id, 'reply', reply))
+                all_texts.append((f"reply_{len(all_texts)}", comment_id, 'reply', reply['text'], reply['reply_likes']))
     
     # Remove duplicates
     unique_texts = list(set(all_texts))
@@ -95,8 +96,11 @@ def preprocess_tiktok_data(data: Dict[str, Dict], batch_size: int = 1000, max_wo
         for future in as_completed(future_to_batch):
             processed_texts.extend(future.result())
     
-    # Reconstruct the nested structure with filtered texts
-    filtered_data = defaultdict(lambda: {'description': '', 'comments': defaultdict(lambda: {'text': '', 'replies': []})})
+    # Reconstruct the nested structure with filtered texts and include likes
+    filtered_data = defaultdict(lambda: {
+        'description': '', 'post_likes': 0,
+        'comments': defaultdict(lambda: {'text': '', 'comment_likes': 0, 'replies': []})
+    })
     
     # Create a mapping of comment_ids to post_ids for faster lookup
     comment_to_post = {item['id']: item['parent_id'] for item in processed_texts if item['type'] == 'comment'}
@@ -104,18 +108,60 @@ def preprocess_tiktok_data(data: Dict[str, Dict], batch_size: int = 1000, max_wo
     for item in processed_texts:
         if item['type'] == 'post':
             filtered_data[item['id']]['description'] = item['text']
+            filtered_data[item['id']]['post_likes'] = item['likes']
         elif item['type'] == 'comment':
             post_id = item['parent_id']
             comment_id = item['id']
             filtered_data[post_id]['comments'][comment_id]['text'] = item['text']
+            filtered_data[post_id]['comments'][comment_id]['comment_likes'] = item['likes']
         elif item['type'] == 'reply':
             comment_id = item['parent_id']
             post_id = comment_to_post.get(comment_id)
             if post_id:
-                filtered_data[post_id]['comments'][comment_id]['replies'].append(item['text'])
+                filtered_data[post_id]['comments'][comment_id]['replies'].append({
+                    'text': item['text'],
+                    'reply_likes': item['likes']
+                })
             else:
                 print(f"Warning: Could not find parent post for reply {item['id']}")
     
     return dict(filtered_data)
 
+def extract_hashtags(text):
+    words = text.split()
+    hashtags = [re.sub(r'[^\w#]', '', word) for word in words if word.startswith('#')]
+    return hashtags
 
+def analyze_hashtags(organized_data):
+    all_hashtags = []
+    
+    for post_data in organized_data.values():
+        description = post_data['description']
+        hashtags = extract_hashtags(description)
+        all_hashtags.extend(hashtags)
+    
+    # Count the occurrences of each hashtag
+    hashtag_counts = Counter(all_hashtags)
+    if '#' in hashtag_counts:
+        del hashtag_counts['#']
+    # Get the top 10 most common hashtags
+    top_10_hashtags = hashtag_counts.most_common(10)
+    
+    return top_10_hashtags
+
+def extract_json_from_text(text):
+    # Find content between triple backticks
+    json_match = re.search(r'```json\n(.*?)```', text, re.DOTALL)
+    
+    if json_match:
+        json_string = json_match.group(1)
+        try:
+            # Parse the JSON string
+            json_data = json.loads(json_string)
+            return json_data
+        except json.JSONDecodeError as e:
+            print(f"Error decoding JSON: {e}")
+            return None
+    else:
+        print("No JSON found in the text")
+        return None

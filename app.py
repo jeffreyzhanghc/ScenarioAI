@@ -1,3 +1,5 @@
+from flask import Flask, request, jsonify
+from flask_cors import CORS
 from db import get_comments, transform_tiktok_data
 from chat import get_response_from_llm
 from utils import preprocess_tiktok_data, analyze_hashtags, extract_json_from_text
@@ -7,6 +9,8 @@ import os.path as osp
 from dotenv import load_dotenv
 
 load_dotenv()
+app = Flask(__name__)
+CORS(app)
 
 PROMPT = """
 You are an expert AI assistant specializing in content strategy and market analysis. Your task is to analyze a large dataset of social media interactions to identify compelling product usage scenarios for TikTok content creation. You will be provided with a productkeyword and a structured dataset of posts, comments, and replies from TikTok.
@@ -32,10 +36,10 @@ Your task is to generate similarly deep, emotionally resonant scenarios based on
 </example>
 
 ## reivew Data Structure
-The input data is a nested dictionary representing TikTok posts, comments, and replies. Each post has a unique post_id and contains:
+The input data is a nested dictionary representing TikTok posts, comments, and replies. Each post has a unique `post_id` and contains:
 - Description: A brief text description of the post
 - Post Likes: Number of likes the post received
-- Comments: A dictionary of comments, each with a unique comment_id
+- Comments: A dictionary of comments, each with a unique `comment_id`
   - Text: The comment's content
   - Comment Likes: Number of likes the comment received
   - Replies: A list of reply dictionaries, each containing:
@@ -63,7 +67,7 @@ THOUGHT:
 <THOUGHT>
 
 Scenario JSON:
-json
+```json
 [
   {{
     "scenario": "Concise description of a product selling scenario",
@@ -103,7 +107,7 @@ json
     }}
   }}
 ]
-
+```
 
 In <THOUGHT>, provide:
 - State the <keyword>, and corresponding space of search
@@ -164,6 +168,7 @@ Be strict and analyze whether there is hallucination based on the comments refer
 """
 
 
+        
 def generate_scenarios(
     save_dir,
     reviews,
@@ -191,44 +196,46 @@ def generate_scenarios(
             msg_history=msg_history,
             system_message= "You are a helpful and smart assistant"
         )
-        ## PARSE OUTPUT
-        #json_output = extract_json_between_markers(text)
-        #assert json_output is not None, "Failed to extract JSON from LLM output"
-        print(text)
         return text
-
-        # Iteratively improve task.
     except Exception as e:
         print(f"Failed to generate: {e}")
-    ## SAVE IDEAS
+        return None  # Return None instead of not returning anything
 
-    #with open(osp.join(save_dir, "scenario.json"), "w") as f:
-        #json.dump(json_output, f, indent=4)
-        
-
-
-if __name__ == "__main__":
+@app.route('/generate', methods=['POST'])
+def generate():
     client_model = "gpt-4o-2024-05-13"
     client = openai.OpenAI()
-    raw_data = asyncio.run(get_comments(['#MassageTherapy', '#Relaxation', '#StressRelief','#Wellness', '#Health', '#SelfCare', '#PainRelief', '#Recovery','#DeepTissueMassage', '#MassageAtHome', '#FeelBetter', '#MindBodySoul', '#BodyMassage', '#TherapeuticMassage', '#SpaDay']))[:10000]
-    
-    # Transform the raw data into the nested structure
+    data = request.json
+    keyword = data.get('keyword', '')
+    input_hashtags = data.get('hashtags', [])
+    #print(keyword,input_hashtags)
+
+    # Fetch and process data
+    raw_data = asyncio.run(get_comments(input_hashtags))
+
     organized_data = transform_tiktok_data(raw_data)
-    top_hashtags = analyze_hashtags(organized_data)
-
-    print("Top 10 hashtags",top_hashtags)
     total_texts = sum(len(post['comments']) + sum(len(comment['replies']) for comment in post['comments'].values()) for post in organized_data.values())
-
     print(f"Processing {total_texts} total comments and replies...")
-    #print(organized_data)
+    top_hashtags = analyze_hashtags(organized_data)
     processed_data = preprocess_tiktok_data(organized_data, batch_size=1000, max_workers=10)
-
-    
     print(f"Retained {sum(len(post['comments']) + sum(len(comment['replies']) for comment in post['comments'].values()) for post in processed_data.values())} meaningful comments and replies.")
 
-    #processed_comment_texts = [item['original'] for item in processed_comments]
-    #long_text = ";".join(processed_comment_texts)
+    results = generate_scenarios("./", processed_data, keyword, client, client_model)
+    
+    if results is None:
+        return jsonify({"error": "Failed to generate scenarios"}), 500
 
-    results = generate_scenarios("./", processed_data, "neck massager", client, client_model)
-    #generate_scenarios("./", processed_data, "MassageDevice", client, client_model, True, results)
-    output = extract_json_from_text(results)
+    scenarios = extract_json_from_text(results)
+    
+    if scenarios is None:
+        return jsonify({"error": "Failed to extract scenarios from generated text"}), 500
+
+    response = {
+        'top_hashtags': top_hashtags,
+        'scenarios': scenarios
+    }
+
+    return jsonify(response)
+
+if __name__ == "__main__":
+    app.run(debug=True)
