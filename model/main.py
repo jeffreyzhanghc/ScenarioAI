@@ -210,7 +210,7 @@ def generate_scenarios(
 if __name__ == "__main__":
     client_model = "gpt-4o-2024-05-13"
     client = openai.OpenAI()
-    raw_data = asyncio.run(get_comments(['#MassageTherapy', '#Relaxation', '#StressRelief','#Wellness', '#Health', '#SelfCare', '#PainRelief', '#Recovery','#DeepTissueMassage', '#MassageAtHome', '#FeelBetter', '#MindBodySoul', '#BodyMassage', '#TherapeuticMassage', '#SpaDay']))[:10000]
+    raw_data = asyncio.run(get_comments(['#neckmassager','#footmassager','#shouldermassager']))[:10000]
     
     # Transform the raw data into the nested structure
     organized_data = transform_tiktok_data(raw_data)
