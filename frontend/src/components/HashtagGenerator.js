@@ -1,26 +1,114 @@
-import React, { useState, useMemo } from 'react';
-import { Search, Hash } from 'lucide-react';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import React, { useState } from 'react';
+import {
+  Search,
+  Hash,
+  Zap,
+  Video,
+  ChevronDown,
+  ChevronUp,
+} from 'lucide-react';
+import ScenarioCard from './ScenarioCard';
 
-const API_BASE_URL = 'http://127.0.0.1:5000';
+const API_BASE_URL = 'http://127.0.0.1:8000';
 
-const HashtagGenerator = () => {
+const CollapsibleSection = ({ title, children }) => {
+  const [isOpen, setIsOpen] = useState(false);
+
+  return (
+    <div className="border-t border-gray-300 pt-4">
+      <button
+        className="flex justify-between items-center w-full text-left focus:outline-none"
+        onClick={() => setIsOpen(!isOpen)}
+      >
+        <h3 className="text-lg font-medium text-gray-800 flex items-center">
+          <Video className="mr-2 text-blue-500" size={20} />
+          {title}
+        </h3>
+        {isOpen ? (
+          <ChevronUp className="text-blue-500" size={20} />
+        ) : (
+          <ChevronDown className="text-blue-500" size={20} />
+        )}
+      </button>
+      {isOpen && <div className="mt-4">{children}</div>}
+    </div>
+  );
+};
+
+const ScenarioDetail = ({ scenario }) => (
+  <div className="bg-white rounded-lg shadow-md overflow-hidden">
+    <div className="p-6 space-y-6">
+      <h2 className="text-2xl font-semibold text-gray-900 border-b border-gray-200 pb-4">
+        {scenario.scenario}
+      </h2>
+
+      <div className="bg-blue-50 p-4 rounded-lg">
+        <h3 className="text-lg font-medium mb-3 text-blue-600 flex items-center">
+          <Zap className="mr-2" size={20} />
+          Reason
+        </h3>
+        <p className="text-gray-700">{scenario.reason}</p>
+      </div>
+
+      <div>
+        <h3 className="text-lg font-medium mb-3 text-blue-600 flex items-center">
+          <Hash className="mr-2" size={20} />
+          Hashtags
+        </h3>
+        <div className="flex flex-wrap gap-2">
+          {scenario.hashtags.map((tag, index) => (
+            <span
+              key={index}
+              className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-700 hover:bg-blue-200 transition-colors duration-300"
+            >
+              {tag}
+            </span>
+          ))}
+        </div>
+      </div>
+
+      <div className="space-y-4">
+        <h3 className="text-lg font-medium text-blue-600">Content Guidance</h3>
+        {Object.entries(scenario.content_guidance).map(([key, value], idx) => (
+          <div key={idx} className="bg-blue-50 p-4 rounded-lg">
+            <h4 className="font-semibold text-blue-500 mb-2 capitalize">
+              {key.replace('_', ' ')}
+            </h4>
+            {Array.isArray(value) ? (
+              <ul className="list-disc list-inside text-gray-800 space-y-1">
+                {value.map((item, index) => (
+                  <li key={index}>{item}</li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-gray-800">{value}</p>
+            )}
+          </div>
+        ))}
+      </div>
+
+      <CollapsibleSection title="Related TikTok Videos">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="aspect-w-9 aspect-h-16 bg-gray-200 rounded-lg overflow-hidden">
+            <iframe
+              src="https://www.tiktok.com/oembed?url=https://www.tiktok.com/@chrisandjasmin/video/7353284590523436331"
+              allowFullScreen
+              className="w-full h-full"
+            ></iframe>
+          </div>
+          {/* Add more video embeds as needed */}
+        </div>
+      </CollapsibleSection>
+    </div>
+  </div>
+);
+
+const ScenarioGenerator = () => {
   const [keywords, setKeywords] = useState('');
-  const [inputHashtags, setInputHashtags] = useState('');
-  const [results, setResults] = useState(null);
-  const [topHashtags, setTopHashtags] = useState([]);
   const [scenarios, setScenarios] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
-
-  const chartColors = ['#9333EA', '#EC4899', '#F97316', '#8B5CF6', '#DB2777'];
-
-  const topHashtagsData = useMemo(() => {
-    return topHashtags
-      .map(([name, count]) => ({ name, count }))
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 10);
-  }, [topHashtags]);
+  const [selectedScenario, setSelectedScenario] = useState(null);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -33,28 +121,19 @@ const HashtagGenerator = () => {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           keyword: keywords,
-          hashtags: inputHashtags.split(' ').filter(tag => tag.startsWith('#'))
+          hashtags: [],
         }),
       });
 
       if (!response.ok) {
-        throw new Error('Failed to generate hashtags and scenarios');
+        throw new Error('Failed to generate scenarios');
       }
 
       const data = await response.json();
-      setTopHashtags(data.top_hashtags);
       setScenarios(data.scenarios);
-      
-      // Process hashtags for display
-      const allHashtags = data.scenarios.flatMap(scenario => scenario.hashtags);
-      setResults({
-        popular: allHashtags.slice(0, 5),
-        niche: allHashtags.slice(5, 10),
-        related: allHashtags.slice(10, 15)
-      });
-
+      setSelectedScenario(data.scenarios[0]);
     } catch (error) {
       console.error('Error:', error);
       setError(error.message);
@@ -65,148 +144,85 @@ const HashtagGenerator = () => {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <header className="border-b border-gray-200 py-4 bg-white">
-        <div className="container mx-auto px-4 flex justify-between items-center">
-          <div className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-purple-500 via-pink-500 to-orange-500">
-            Scenario AI
-          </div>
-          <nav className="hidden md:flex space-x-4">
-            <a href="https://github.com/jeffreyzhanghc/ScenarioAI/tree/main/frontend" className="text-gray-600 hover:text-gray-900">Products</a>
-            <a href="https://github.com/jeffreyzhanghc/ScenarioAI/tree/main/frontend" className="text-gray-600 hover:text-gray-900">Use Cases</a>
-            <a href="https://github.com/jeffreyzhanghc/ScenarioAI/tree/main/frontend" className="text-gray-600 hover:text-gray-900">Resources</a>
-            <a href="https://github.com/jeffreyzhanghc/ScenarioAI/tree/main/frontend" className="text-gray-600 hover:text-gray-900">For Business</a>
-            <a href="https://github.com/jeffreyzhanghc/ScenarioAI/tree/main/frontend" className="text-gray-600 hover:text-gray-900">Pricing</a>
-          </nav>
-          <div className="flex space-x-4">
-            <button className="text-gray-600 hover:text-gray-900">Talk to Sales</button>
-            <button className="bg-gradient-to-r from-purple-500 via-pink-500 to-orange-500 text-white px-4 py-2 rounded-full hover:opacity-90 transition duration-300">
-              Dashboard
-            </button>
-          </div>
+      {/* Header */}
+      <header className="bg-white shadow-sm py-4">
+        <div className="container mx-auto px-6">
+          <h1 className="text-3xl font-bold text-center text-blue-600">
+            Scenario AI Generator
+          </h1>
         </div>
       </header>
-      <main className="container mx-auto px-4 py-12">
-        <div className="max-w-4xl mx-auto text-center">
-          <div className="inline-block bg-gradient-to-r from-purple-500 via-pink-500 to-orange-500 text-white rounded-full px-3 py-1 text-sm font-semibold mb-4">
-            Scenario AI
-          </div>
-          <h1 className="text-5xl font-bold mb-4 text-gray-900">Hashtag Generator</h1>
-          <p className="text-xl text-gray-600 mb-8">
-            Generate the best hashtags and content scenarios to increase your content's visibility. Use Scenario AI's instant generator
-          </p>
-          <form onSubmit={handleSubmit} className="mb-8">
-            <div className="mb-4">
-              <label htmlFor="keywords" className="block text-left text-sm font-medium text-gray-700 mb-2">
-                Keywords
-              </label>
-              <input
-                type="text"
-                id="keywords"
-                className="w-full px-4 py-2 border border-gray-300 rounded-full focus:ring-pink-500 focus:border-pink-500"
-                placeholder="European Beaches"
-                value={keywords}
-                onChange={(e) => setKeywords(e.target.value)}
-                required
-              />
-            </div>
-            <div className="mb-4">
-              <label htmlFor="inputHashtags" className="block text-left text-sm font-medium text-gray-700 mb-2">
-                Input Hashtags
-              </label>
-              <input
-                type="text"
-                id="inputHashtags"
-                className="w-full px-4 py-2 border border-gray-300 rounded-full focus:ring-pink-500 focus:border-pink-500"
-                placeholder="#travel #adventure"
-                value={inputHashtags}
-                onChange={(e) => setInputHashtags(e.target.value)}
-              />
-            </div>
-            <button 
+
+      {/* Main Content */}
+      <main className="container mx-auto px-6 py-8">
+        {/* Search Form */}
+        <form
+          onSubmit={handleSubmit}
+          className="max-w-3xl mx-auto mb-10"
+        >
+          <div className="flex items-center bg-white rounded-full shadow-lg p-2">
+            <input
+              type="text"
+              className="flex-grow px-4 py-2 bg-transparent focus:outline-none text-gray-800"
+              placeholder="Enter keywords for your content"
+              value={keywords}
+              onChange={(e) => setKeywords(e.target.value)}
+              required
+            />
+            <button
               type="submit"
-              className="mt-4 bg-gradient-to-r from-purple-500 via-pink-500 to-orange-500 text-white font-bold py-3 px-6 rounded-full transition duration-300 flex items-center justify-center w-full hover:opacity-90"
+              className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-6 rounded-full transition duration-300 flex items-center"
               disabled={isLoading}
             >
-              {isLoading ? 'Generating...' : 'Generate Hashtags and Scenarios'}
+              {isLoading ? 'Generating...' : 'Generate'}
               <Search className="ml-2" size={20} />
             </button>
-          </form>
-          
-          {error && (
-            <div className="mt-4 p-4 bg-red-100 text-red-700 rounded-lg">
-              Error: {error}
-            </div>
-          )}
+          </div>
+        </form>
 
-        {topHashtagsData.length > 0 && (
-                <div className="mt-8 bg-white p-6 rounded-lg shadow-lg">
-                  <h2 className="text-2xl font-bold mb-4 text-gray-900">Top 10 Hashtags</h2>
-                  <div className="h-96">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart
-                        data={topHashtagsData}
-                        layout="vertical"
-                        margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
-                      >
-                        <XAxis type="number" />
-                        <YAxis dataKey="name" type="category" width={150} />
-                        <Tooltip
-                          contentStyle={{
-                            backgroundColor: 'rgba(255, 255, 255, 0.8)',
-                            border: 'none',
-                            borderRadius: '4px',
-                            boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
-                          }}
-                          cursor={{ fill: 'rgba(0, 0, 0, 0.1)' }}
-                        />
-                        <Bar dataKey="count" barSize={20}>
-                          {topHashtagsData.map((entry, index) => (
-                            <Cell key={`cell-${index}`} fill={chartColors[index % chartColors.length]} />
-                          ))}
-                        </Bar>
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
-                </div>
-              )}
+        {/* Error Message */}
+        {error && (
+          <div className="max-w-3xl mx-auto mt-4 p-4 bg-red-50 text-red-700 rounded-lg border border-red-200">
+            Error: {error}
+          </div>
+        )}
 
-
-
-          {scenarios.length > 0 && (
-            <div className="mt-8 bg-white p-6 rounded-lg shadow-lg">
-              <h2 className="text-2xl font-bold mb-4 text-gray-900">Generated Scenarios</h2>
+        {/* Scenarios and Details */}
+        {scenarios.length > 0 && (
+          <div className="flex flex-col lg:flex-row gap-8">
+            {/* Scenario List */}
+            <div
+              className="lg:w-1/3 space-y-4 overflow-y-auto"
+              style={{
+                maxHeight: 'calc(100vh - 200px)',
+              }}
+            >
               {scenarios.map((scenario, index) => (
-                <div key={index} className="mb-6 p-4 border border-gray-200 rounded-lg">
-                  <h3 className="text-xl font-semibold mb-2">{scenario.scenario}</h3>
-                  <p className="text-gray-600 mb-2">{scenario.reason}</p>
-                  <div className="mb-2">
-                    <strong>Hashtags:</strong>
-                    <div className="flex flex-wrap gap-2 mt-1">
-                      {scenario.hashtags.map((tag, tagIndex) => (
-                        <span key={tagIndex} className="bg-blue-100 text-blue-800 px-2 py-1 rounded-full text-sm">
-                          {tag}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="mb-2">
-                    <strong>Content Guidance:</strong>
-                    <ul className="list-disc list-inside mt-1">
-                      <li><strong>Main Theme:</strong> {scenario.content_guidance.main_theme}</li>
-                      <li><strong>Hook:</strong> {scenario.content_guidance.hook}</li>
-                      <li><strong>Key Points:</strong> {scenario.content_guidance.key_points.join(', ')}</li>
-                      <li><strong>Visuals:</strong> {scenario.content_guidance.visuals.join(', ')}</li>
-                      <li><strong>Call to Action:</strong> {scenario.content_guidance.call_to_action}</li>
-                    </ul>
-                  </div>
-                </div>
+                <ScenarioCard
+                  key={index}
+                  scenario={scenario}
+                  isSelected={selectedScenario === scenario}
+                  onClick={() => setSelectedScenario(scenario)}
+                />
               ))}
             </div>
-          )}
-        </div>
+
+            {/* Scenario Details */}
+            <div
+              className="lg:w-2/3 overflow-y-auto"
+              style={{
+                maxHeight: 'calc(100vh - 200px)',
+              }}
+            >
+              {selectedScenario && (
+                <ScenarioDetail scenario={selectedScenario} />
+              )}
+            </div>
+          </div>
+        )}
       </main>
     </div>
   );
 };
 
-export default HashtagGenerator;
+export default ScenarioGenerator;

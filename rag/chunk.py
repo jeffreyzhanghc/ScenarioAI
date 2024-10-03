@@ -1,8 +1,14 @@
 from openai import OpenAI
-import numpy as np, os, pinecone, pandas as pd, time
+import numpy as np, os, pinecone, pandas as pd, time,asyncio
 from dotenv import load_dotenv
 from openai import OpenAI
 from pinecone import Pinecone, ServerlessSpec
+from concurrent.futures import ThreadPoolExecutor
+from functools import partial
+import logging
+
+logging.basicConfig(level=logging.WARN)
+logger = logging.getLogger(__name__)
 
 
 load_dotenv()
@@ -34,6 +40,7 @@ index = pc.Index(index_name)
 
 def create_chunks_from_df(df):
     # Ensure IDs are strings
+    #logger.debug()
     df['post_id'] = df['post_id'].astype(str)
     df['comment_id'] = df['comment_id'].astype(str)
     
@@ -89,6 +96,7 @@ def create_chunks_from_df(df):
     chunks_df = pd.DataFrame(chunks)
 
     chunks_df = chunks_df[chunks_df['text'].notna() & (chunks_df['text'] != '')]
+    chunks_df.to_csv("results.csv")
     
     return chunks_df
 
@@ -116,9 +124,9 @@ def get_embeddings(texts, model = "text-embedding-3-small",  batch_size = 100):
     return embeddings
 
 
-def upsert_embeddings_to_pinecone(chunks_df):
+async def upsert_embeddings_to_pinecone(chunks_df):
     # Generate embeddings
-    texts = [text for text in chunks_df['text'].tolist() if text.strip()]
+    texts = [str(text) for text in chunks_df['text'].tolist() if str(text).strip()]
     embeddings = get_embeddings(texts)
     chunks_df['embedding'] = embeddings
 
@@ -127,10 +135,10 @@ def upsert_embeddings_to_pinecone(chunks_df):
     for idx, row in chunks_df.iterrows():
         metadata = {
             'chunk_id': row['chunk_id'],
-            'parent_id': row['parent_id'] if row['parent_id'] else '',
+            'parent_id': row['parent_id'] if (row['parent_id'] and pd.notna(row['parent_id'])) else '',
             'level': row['level'],
             'likes': row['likes'] if not np.isnan(row['likes']) else 0,
-            'text': row['text'] if row['text'] else ''
+            'text': row['text'] if (row['text'] and pd.notna(row['text'])) else ''
         }
         vectors.append({"id": row['chunk_id'], "values":row['embedding'], "metadata":metadata})
 
@@ -140,15 +148,27 @@ def upsert_embeddings_to_pinecone(chunks_df):
         batch = vectors[i:i+batch_size]
         index.upsert(vectors=batch)
 
-def query_pinecone(query_text, top_k=10):
-    # Get embedding for the query text
-    query_embedding = get_embeddings([query_text])[0]
-    
-    # Query Pinecone
-    results = index.query(vector=query_embedding, top_k=top_k, include_metadata=True)
-    return results
 
-def rerank_results(results):
+
+
+
+async def query_pinecone_async(vector, top_k=10):
+    executor = ThreadPoolExecutor(max_workers=5)
+    loop = asyncio.get_event_loop()
+    func = partial(index.query, vector=vector, top_k=top_k, includeMetadata = True)
+    response = await loop.run_in_executor(executor, func)
+    return response
+
+async def query_pinecone(query_text, top_k=10):
+    # Get embedding for the query text
+    query_embedding = get_embeddings(query_text)
+    # Query Pinecone
+    tasks = [query_pinecone_async(query,top_k) for query in query_embedding]
+    responses = await asyncio.gather(*tasks)
+    
+    return responses
+
+def rerank_results(results, likes_weight=0.5, similarity_weights=0.5):
     # Convert results to DataFrame
     data = []
     for match in results['matches']:
@@ -165,27 +185,49 @@ def rerank_results(results):
     results_df = pd.DataFrame(data)
     
     # Rerank based on combined score (you can adjust weights as needed)
-    results_df['combined_score'] = results_df['score'] + (results_df['likes'] * 0.01)
-    results_df = results_df.sort_values(by='combined_score', ascending=False)
+    
+    results_df['normalized_likes'] = (results_df['likes'] - results_df['likes'].min()) / (results_df['likes'].max() - results_df['likes'].min())
+    results_df['combined_score'] = likes_weight * results_df['normalized_likes'] + results_df['score'] * similarity_weights
+    
     return results_df
 
 def reconstruct_context(row, chunks_df):
     context_pieces = []
-    current_row = row
+    current_row = row.copy()  # Create a copy to avoid modifying the original row
+    visited_ids = set()
+    
+    accumulated_score = current_row['combined_score']
+    
     while True:
         context_pieces.insert(0, current_row['text'])
-        parent_id = current_row['parent_id']
-        if not parent_id or parent_id == current_row['chunk_id']:
+        parent_id = current_row.get('parent_id')
+        
+        # Check for termination conditions
+        if not parent_id or parent_id == current_row['chunk_id'] or parent_id in visited_ids:
             break
-        current_row = chunks_df[chunks_df['chunk_id'] == parent_id].iloc[0]
+        
+        # Find the parent row
+        parent_rows = chunks_df[chunks_df['chunk_id'] == parent_id]
+        if parent_rows.empty:
+            #print(f"Warning: Parent chunk with ID {parent_id} not found for chunk {current_row['chunk_id']}")
+            break
+        
+        current_row = parent_rows.iloc[0]
+        visited_ids.add(parent_id)
+        # Accumulate the score
+        accumulated_score += current_row['normalized_likes']
+    
     full_context = '\n'.join(context_pieces)
-    return full_context
+    return full_context, accumulated_score
 
 def get_full_contexts(results_df, chunks_df):
-    results_df['full_context'] = results_df.apply(lambda row: reconstruct_context(row, chunks_df), axis=1)
-    results_df.to_csv('results.csv')
-    return results_df
+    # Apply the reconstruction and get both context and accumulated score
+    results = results_df.apply(lambda row: reconstruct_context(row, chunks_df), axis=1)
+    
+    # Unpack the results
+    results_df['full_context'], results_df['accumulated_score'] = zip(*results)
 
+    return results_df
 
 
 
