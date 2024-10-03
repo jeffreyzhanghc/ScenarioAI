@@ -1,0 +1,21 @@
+services:
+  backend:
+    build: ./backend
+    ports:
+      - "8000:8000"
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - HOST_POSTGR=${HOST_POSTGR}
+      - PORT_POSTGRE=${PORT_POSTGRE}
+      - DB_POSTGRE=${DB_POSTGRE}
+      - password=${password}
+      - PINECONE_API_KEY=${PINECONE_API_KEY}
+    env_file:
+      - ./backend/.env
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend

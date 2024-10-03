@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import Select from 'react-select';
 import {
   Search,
   Hash,
@@ -34,6 +35,7 @@ const CollapsibleSection = ({ title, children }) => {
     </div>
   );
 };
+
 
 const ScenarioDetail = ({ scenario }) => (
   <div className="bg-white rounded-lg shadow-md overflow-hidden">
@@ -105,10 +107,88 @@ const ScenarioDetail = ({ scenario }) => (
 
 const ScenarioGenerator = () => {
   const [keywords, setKeywords] = useState('');
+  const [selectedHashtags, setSelectedHashtags] = useState([]);
   const [scenarios, setScenarios] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
   const [selectedScenario, setSelectedScenario] = useState(null);
+
+  // Example hashtag options (you can fetch these from an API if needed)
+  const hashtagOptions = [
+    { value: '#footmassager', label: '#footmassager' },
+    { value: '#neckmassager', label: '#neckmassager' },
+    { value: '#backmassager', label: '#backmassager' },
+    { value: '#shouldermassager', label: '#shouldermassager' },
+    { value: '#legmassager', label: '#legmassager' },
+    { value: '#handmassager', label: '#handmassager' },
+    { value: '#heatedmassager', label: '#heatedmassager' },
+    { value: '#mysterybag', label: '#mysterybag' },
+    { value: '#wranglerbag', label: '#wranglerbag' },
+    { value: '#topplanet', label: '#topplanet' },
+    { value: '#toplanet', label: '#toplanet' },
+    { value: '#MassageTherapy', label: '#MassageTherapy' },
+    { value: '#Relaxation', label: '#Relaxation' },
+    { value: '#StressRelief', label: '#StressRelief' },
+    { value: '#Wellness', label: '#Wellness' },
+    { value: '#Health', label: '#Health' },
+    { value: '#SelfCare', label: '#SelfCare' },
+    { value: '#PainRelief', label: '#PainRelief' },
+    { value: '#Recovery', label: '#Recovery' },
+    { value: '#DeepTissueMassage', label: '#DeepTissueMassage' },
+    { value: '#MassageAtHome', label: '#MassageAtHome' },
+    { value: '#FeelBetter', label: '#FeelBetter' },
+    { value: '#MindBodySoul', label: '#MindBodySoul' },
+    { value: '#BodyMassage', label: '#BodyMassage' },
+    { value: '#TherapeuticMassage', label: '#TherapeuticMassage' },
+    { value: '#SpaDay', label: '#SpaDay' },
+    { value: 'Massage Devices', label: 'Massage Devices' },
+    { value: 'Massager', label: 'Massager' },
+    { value: 'Massage Tools', label: 'Massage Tools' },
+    { value: 'Home Massage', label: 'Home Massage' },
+    { value: 'Electric Massager', label: 'Electric Massager' },
+    { value: 'Portable Massager', label: 'Portable Massager' },
+    { value: 'Foot Massager', label: 'Foot Massager' },
+    { value: 'Back Massager', label: 'Back Massager' },
+    { value: 'Neck Massager', label: 'Neck Massager' },
+    { value: 'Shoulder Massager', label: 'Shoulder Massager' },
+    { value: 'Hand Massager', label: 'Hand Massager' },
+    { value: 'Leg Massager', label: 'Leg Massager' },
+    { value: 'Heated Massager', label: 'Heated Massager' },
+    { value: '#FashionBags', label: '#FashionBags' },
+    { value: '#StylishBags', label: '#StylishBags' },
+    { value: '#BagTrends', label: '#BagTrends' },
+    { value: '#BagLovers', label: '#BagLovers' },
+    { value: '#BagCollection', label: '#BagCollection' },
+    { value: '#DesignerBags', label: '#DesignerBags' },
+    { value: '#BagFashion', label: '#BagFashion' },
+    { value: '#BagOfTheDay', label: '#BagOfTheDay' },
+    { value: '#BagAddict', label: '#BagAddict' },
+    { value: '#Bags', label: '#Bags' },
+    { value: '#Backpack', label: '#Backpack' },
+    { value: '#Handbag', label: '#Handbag' },
+    { value: '#ToteBag', label: '#ToteBag' },
+    { value: '#ShoulderBag', label: '#ShoulderBag' },
+    { value: '#CanvasBag', label: '#CanvasBag' },
+    { value: '#bagtrends', label: '#bagtrends' },
+    { value: '#baglovers', label: '#baglovers' },
+    { value: '#summerbags', label: '#summerbags' },
+    { value: 'fashion bags', label: 'fashion bags' },
+    { value: 'stylish bags', label: 'stylish bags' },
+    { value: 'trendy bags', label: 'trendy bags' },
+    { value: 'designer bags', label: 'designer bags' },
+    { value: 'luxury bags', label: 'luxury bags' },
+    { value: 'affordable bags', label: 'affordable bags' },
+    { value: 'quality bags', label: 'quality bags' },
+    { value: 'latest bag trends', label: 'latest bag trends' },
+    { value: 'handbag', label: 'handbag' },
+    { value: 'tote bag', label: 'tote bag' },
+    { value: 'shoulder bag', label: 'shoulder bag' },
+    { value: 'crossbody bag', label: 'crossbody bag' },
+    { value: 'clutch bag', label: 'clutch bag' },
+    { value: 'travel bag', label: 'travel bag' },
+    { value: 'gym bag', label: 'gym bag' },
+    // Add more hashtag options as needed
+  ];
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -123,7 +203,7 @@ const ScenarioGenerator = () => {
         },
         body: JSON.stringify({
           keyword: keywords,
-          hashtags: [],
+          hashtags: selectedHashtags.map(tag => tag.value),
         }),
       });
 
@@ -158,7 +238,7 @@ const ScenarioGenerator = () => {
         {/* Search Form */}
         <form
           onSubmit={handleSubmit}
-          className="max-w-3xl mx-auto mb-10"
+          className="max-w-3xl mx-auto mb-10 space-y-4"
         >
           <div className="flex items-center bg-white rounded-full shadow-lg p-2">
             <input
@@ -169,6 +249,22 @@ const ScenarioGenerator = () => {
               onChange={(e) => setKeywords(e.target.value)}
               required
             />
+          </div>
+          <div className="bg-white rounded-lg shadow-lg p-4">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Select Hashtags
+            </label>
+            <Select
+              isMulti
+              options={hashtagOptions}
+              value={selectedHashtags}
+              onChange={setSelectedHashtags}
+              placeholder="Search and select hashtags..."
+              className="basic-multi-select"
+              classNamePrefix="select"
+            />
+          </div>
+          <div className="flex justify-end">
             <button
               type="submit"
               className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-6 rounded-full transition duration-300 flex items-center"
