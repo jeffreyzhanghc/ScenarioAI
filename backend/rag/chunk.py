@@ -96,7 +96,7 @@ def create_chunks_from_df(df):
     chunks_df = pd.DataFrame(chunks)
 
     chunks_df = chunks_df[chunks_df['text'].notna() & (chunks_df['text'] != '')]
-    chunks_df.to_csv("results.csv")
+    #chunks_df.to_csv("results.csv")
     
     return chunks_df
 
@@ -124,7 +124,7 @@ def get_embeddings(texts, model = "text-embedding-3-small",  batch_size = 100):
     return embeddings
 
 
-async def upsert_embeddings_to_pinecone(chunks_df):
+async def upsert_embeddings_to_pinecone(chunks_df,batch_size = 300):
     # Generate embeddings
     texts = [str(text) for text in chunks_df['text'].tolist() if str(text).strip()]
     embeddings = get_embeddings(texts)
@@ -132,18 +132,32 @@ async def upsert_embeddings_to_pinecone(chunks_df):
 
     # Prepare data for upsert
     vectors = []
-    for idx, row in chunks_df.iterrows():
-        metadata = {
-            'chunk_id': row['chunk_id'],
-            'parent_id': row['parent_id'] if (row['parent_id'] and pd.notna(row['parent_id'])) else '',
-            'level': row['level'],
-            'likes': row['likes'] if not np.isnan(row['likes']) else 0,
-            'text': row['text'] if (row['text'] and pd.notna(row['text'])) else ''
+    metadata_cols = ['chunk_id', 'parent_id', 'level', 'likes', 'text']
+    chunks_df['parent_id'] = chunks_df['parent_id'].fillna('')
+    chunks_df['likes'] = chunks_df['likes'].fillna(0)
+    chunks_df['text'] = chunks_df['text'].fillna('')
+
+    # Convert DataFrame to list of records
+    records = chunks_df.to_dict('records')
+
+    # Create the list of vectors
+    vectors = [
+        {
+            "id": record['chunk_id'],
+            "values": record['embedding'],
+            "metadata": {
+                'chunk_id': record['chunk_id'],
+                'parent_id': record['parent_id'],
+                'level': record['level'],
+                'likes': record['likes'],
+                'text': record['text']
+            }
         }
-        vectors.append({"id": row['chunk_id'], "values":row['embedding'], "metadata":metadata})
+        for record in records
+    ]
 
     # Upsert to Pinecone in batches
-    batch_size = 100
+    
     for i in range(0, len(vectors), batch_size):
         batch = vectors[i:i+batch_size]
         index.upsert(vectors=batch)

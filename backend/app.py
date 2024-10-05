@@ -142,10 +142,13 @@ async def generate(request: GenerateRequest):
     results = await generate_scenarios("./", merged_df['full_context'], request.keyword, client, client_model)
     if results is None:
         raise HTTPException(status_code=500, detail="Failed to generate scenarios")
+    
+    #breakpoint()
 
     scenarios = extract_json_from_text(results)
     if scenarios is None:
         raise HTTPException(status_code=500, detail="Failed to extract scenarios from generated text")
+    
 
     return GenerateResponse(scenarios=scenarios)
 

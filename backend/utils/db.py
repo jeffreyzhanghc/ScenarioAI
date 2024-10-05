@@ -20,103 +20,46 @@ async def create_pool():
         user=USER,
         password=PASSWORD,
         min_size=1,
-        max_size=10  # Adjust based on your application's needs
+        max_size=10
     )
 
-async def fetch_in_batches(connection, query, params=None, batch_size=10000):
-    async with connection.transaction():
-        cursor = await connection.cursor(query, *params)
-        while True:
-            records = await cursor.fetch(batch_size)
-            if not records:
-                break
-            yield [dict(record) for record in records]
-
 async def get_data(words, min_play_count=50000, min_comment_likes=5):
-    # Prepare SQL queries
-    posts_query = '''
+    # Prepare SQL query with joins
+    query = '''
         SELECT 
             p.aweme_id AS post_id,
             p.description AS post_description,
-            p.statistics_digg_count::INTEGER AS post_likes
-        FROM tiktok_posts p
-        WHERE p.hashtag_keyword = ANY($1)
-          AND p.statistics_play_count::INTEGER >= $2
-        ORDER BY p.statistics_play_count::INTEGER DESC
-    '''
-
-    comments_query = '''
-        SELECT 
-            c.aweme_id AS post_id,
+            p.statistics_digg_count AS post_likes,
             c.cid AS comment_id,
             c.text AS comments,
-            c.digg_count::INTEGER AS comment_likes
-        FROM tiktok_comments c
-        WHERE c.aweme_id = ANY($1)
-          AND c.digg_count::INTEGER >= $2
-    '''
-
-    replies_query = '''
-        SELECT 
-            r.reply_id AS comment_id,
+            c.digg_count AS comment_likes,
             r.text AS replies,
-            r.digg_count::INTEGER AS reply_likes
-        FROM tiktok_comments_replies r
-        WHERE r.reply_id = ANY($1)
+            r.digg_count AS reply_likes
+        FROM tiktok_posts p
+        LEFT JOIN tiktok_comments c ON p.aweme_id = c.aweme_id AND c.digg_count >= $3
+        LEFT JOIN tiktok_comments_replies r ON c.cid = r.reply_id
+        WHERE p.hashtag_keyword = ANY($1)
+          AND p.statistics_play_count >= $2
+        ORDER BY p.statistics_play_count DESC
     '''
 
     pool = await create_pool()
     try:
         async with pool.acquire() as connection:
-            # Fetch posts
-            posts = []
-            async for batch in fetch_in_batches(connection, posts_query, (words, min_play_count)):
-                posts.extend(batch)
-            if not posts:
+            # Fetch all records
+            records = await connection.fetch(query, words, min_play_count, min_comment_likes)
+            if not records:
                 return pd.DataFrame()
 
-            posts_df = pd.DataFrame(posts)
-            post_ids = posts_df['post_id'].tolist()
+            # Convert records to list of dictionaries
+            data = [dict(record) for record in records]
 
-            # Fetch comments in batches
-            comments = []
-            if post_ids:
-                async for batch in fetch_in_batches(connection, comments_query, (post_ids, min_comment_likes)):
-                    comments.extend(batch)
+            # Create DataFrame
+            df = pd.DataFrame(data)
 
-            if not comments:
-                # No comments found
-                posts_df['comment_id'] = None
-                posts_df['comments'] = None
-                posts_df['comment_likes'] = None
-                posts_df['replies'] = None
-                posts_df['reply_likes'] = None
-                return posts_df
-
-            comments_df = pd.DataFrame(comments)
-            comment_ids = comments_df['comment_id'].tolist()
-
-            # Fetch replies in batches
-            replies = []
-            if comment_ids:
-                async for batch in fetch_in_batches(connection, replies_query, (comment_ids,)):
-                    replies.extend(batch)
-                if replies:
-                    replies_df = pd.DataFrame(replies)
-                else:
-                    replies_df = pd.DataFrame(columns=['comment_id', 'replies', 'reply_likes'])
-            else:
-                replies_df = pd.DataFrame(columns=['comment_id', 'replies', 'reply_likes'])
-
-            # Merge dataframes
-            data = posts_df.merge(comments_df, on='post_id', how='left')
-            if not replies_df.empty:
-                data = data.merge(replies_df, on='comment_id', how='left')
-            else:
-                data['replies'] = None
-                data['reply_likes'] = None
-
-            return data
+            # Handle missing values (if any)
+            df.to_csv("results.csv")
+            return df
 
     except Exception as e:
         print(f"Error during data retrieval: {e}")

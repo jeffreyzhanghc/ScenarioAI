@@ -95,7 +95,7 @@ def generate():
 
     # Step 0: Get data from postgres
     raw_data = asyncio.run(get_data(input_hashtags))
-
+    breakpoint()
     #Step 1: Create chunks
     chunks_df = create_chunks_from_df(raw_data)
     chunks_df = pd.read_csv("results.csv")
